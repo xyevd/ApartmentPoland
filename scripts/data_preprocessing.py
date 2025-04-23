@@ -1,42 +1,98 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OneHotEncoder
+from category_encoders import TargetEncoder
 
 poland_data = pd.read_csv("../data/raw/apartments_pl_2023_08.csv")
-poland_data_features = ['city', 'type', 'squareMeters', 'rooms', 'buildYear',
-                        'buildingMaterial', 'hasBalcony', 'hasParkingSpace']
-poland_data.info()
-X = poland_data[poland_data_features]
+
+fake_boolean_columns = ['hasParkingSpace', 'hasBalcony', 'hasElevator', 'hasSecurity', 'hasStorageRoom']
+
+for col in fake_boolean_columns:
+    # column exists and type check
+    if col in poland_data.columns and poland_data[col].dtype == 'object':
+        # unique values check
+        unique_values = poland_data[col].dropna().unique()
+        if set(unique_values).issubset({'yes', 'no'}):
+            # yes = 1, no = 0, NaN = 0
+            poland_data[col] = poland_data[col].map({'yes': 1, 'no': 0}).fillna(0)
+        else:
+            print(f"Column {col} has other values, then yes/no: {unique_values}")
+    else:
+        print(f"Column {col} doesnt exist or is not object type")
+
+s = (poland_data.dtypes == 'object')
+object_cols = list(s[s].index)
+print("Categorical variables:")
+print(object_cols)
+# 'id', 'city', 'type', 'ownership', 'buildingMaterial', 'condition'
+# 'id' we'll not use, 'city' will be converted to avg_price in city with TargetEncoder
+# 'ownership' will be converted the way like fake_boolean_columns
+# 'type'
+# 'buildingMaterial', 'condition' we will NOT use,
+# because of lack of information: 39% and 76% of NaN
+
+if 'ownership' in poland_data.columns and poland_data['ownership'].dtype == 'object':
+    unique_values = poland_data['ownership'].dropna().unique()
+    if set(unique_values).issubset({'condominium', 'cooperative'}):
+        #  'condominium' = 1  'cooperative' or NaN = 0
+        poland_data['ownership'] = poland_data['ownership'].map({'condominium': 1, 'cooperative': 0}).fillna(0)
+    else:
+        print(f"Column 'ownership' has other values than 'condominium'/'cooperative': {unique_values}")
+else:
+    print(f"Column 'ownership' does not exist or is not of object type")
+
+print(f"\nUnique types: ({len(poland_data['type'].unique())}): {poland_data['type'].unique()}")
+
+print(poland_data.groupby('type')['price'].mean().sort_values())
+# blockOfFlats         605831.715260
+# tenement             734817.556477
+# apartmentBuilding    918659.025330
+# NaN ~ 20% so I decided to do label encoding:
+# NaN = 0
+# blockOfFlats = 1
+# tenement = 2
+# apartmentBuilding = 3
+
+if 'type' in poland_data.columns and poland_data['type'].dtype == 'object':
+    unique_values = poland_data['type'].dropna().unique()
+    if set(unique_values).issubset({'blockOfFlats', 'tenement', 'apartmentBuilding'}):
+        poland_data['type'] = poland_data['type'].map({
+            'blockOfFlats': 1,
+            'tenement': 2,
+            'apartmentBuilding': 3
+        }).fillna(0)
+    else:
+        print(f"Column 'type' has other values than our map: {unique_values}")
+else:
+    print(f"Column 'type' does not exist or is not of object type")
+
+corr_matrix = poland_data.corr(numeric_only=True)
+print(corr_matrix["price"].sort_values(ascending=False))
+
+selected_features = ['squareMeters', 'rooms', 'type', 'longitude', 'hasElevator',
+                    'poiCount', 'hasSecurity', 'hasParkingSpace', 'buildYear',
+                    'centreDistance']
+
+X = poland_data.drop(columns = ['price', 'id'])
 y = poland_data['price']
-#print('\nINITIAL X.INFO()\n')
-#X.info()
+print('\nINITIAL X.INFO()\n')
+X.info()
 
 # dividing data into training and comparing values
 train_X, val_X, train_y, val_y = train_test_split(X, y, random_state = 0)
+print(f"\ntrain_X unique cities ({len(train_X['city'].unique())}): {train_X['city'].unique()}")
+print(f"\nval_X unique cities ({len(val_X['city'].unique())}): {val_X['city'].unique()}")
+print("\ntrain_X unique cities count:")
+print(train_X['city'].value_counts())
 
-#One-hot encoder
-OH_encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
-s = (train_X.dtypes == 'object') # finding non-numeric columns
-object_cols = list(s[s].index) # list of non-numeric columns
+# TargetEncoder initialisation
+encoder = TargetEncoder(cols = ['city'], smoothing = 1.0)
 
-#OH_encoder deletes names and indexes of columns, so we have to add it back
-OH_train_columns = pd.DataFrame(OH_encoder.fit_transform(train_X[object_cols]),
-                                columns = OH_encoder.get_feature_names_out(object_cols),
-                                index = train_X.index)
-OH_val_columns = pd.DataFrame(OH_encoder.transform(val_X[object_cols]),
-                              columns = OH_encoder.get_feature_names_out(object_cols),
-                              index = val_X.index)
-# deleting 'old' non-numeric columns
-num_X_train = train_X.drop(object_cols, axis=1)
-num_X_valid = val_X.drop(object_cols, axis=1)
+train_X['city_encoded'] = encoder.fit_transform(train_X['city'], train_y)
 
-# merge of numeric-only and OH-coded columns
-OH_train_X = pd.concat([num_X_train, OH_train_columns], axis=1)
-OH_valid_X = pd.concat([num_X_valid, OH_val_columns], axis=1)
+val_X['city_encoded'] = encoder.transform(val_X['city'])
 
-#OH_train_X.info()
-# at the moment we have 29!!! columns
+X_train = train_X.drop(columns=['city'])
+val_X = val_X.drop(columns=['city'])
 
-# I've decided to save it to csv
-OH_train_X.to_csv("../data/processed/train_X.csv", index = False)
-OH_valid_X.to_csv("../data/processed/val_X.csv", index = False)
+train_X.to_csv("../data/processed/train_X.csv", index = False)
+val_X.to_csv("../data/processed/val_X.csv", index = False)
