@@ -40,7 +40,7 @@ if 'ownership' in poland_data.columns and poland_data['ownership'].dtype == 'obj
 else:
     print(f"Column 'ownership' does not exist or is not of object type")
 
-print(f"\nUnique types: ({len(poland_data['type'].unique())}): {poland_data['type'].unique()}")
+print(f"\nUnique types({len(poland_data['type'].unique())}): {poland_data['type'].unique()}")
 
 print(poland_data.groupby('type')['price'].mean().sort_values())
 # blockOfFlats         605831.715260
@@ -88,11 +88,14 @@ print(train_X['city'].value_counts())
 encoder = TargetEncoder(cols = ['city'], smoothing = 1.0)
 
 train_X['city_encoded'] = encoder.fit_transform(train_X['city'], train_y)
-
 val_X['city_encoded'] = encoder.transform(val_X['city'])
+selected_features.append('city_encoded')
+train_X = train_X[selected_features]
+val_X = val_X[selected_features]
 
-X_train = train_X.drop(columns=['city'])
-val_X = val_X.drop(columns=['city'])
+#print(train_X.shape, val_X.shape, train_y.shape, val_y.shape)
 
 train_X.to_csv("../data/processed/train_X.csv", index = False)
 val_X.to_csv("../data/processed/val_X.csv", index = False)
+train_y.to_csv("../data/processed/train_y.csv", index = False)
+val_y.to_csv("../data/processed/val_y.csv", index = False)

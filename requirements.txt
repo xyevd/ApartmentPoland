@@ -1,6 +1,7 @@
-pandas
+pandas~=2.2.3
 numpy
 matplotlib
 seaborn
-scikit-learn
+scikit-learn~=1.6.1
 xgboost
+category_encoders~=2.8.1
